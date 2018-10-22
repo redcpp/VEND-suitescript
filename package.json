@@ -1,0 +1,11 @@
+{
+  "name": "scripts_vend",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Diego Said Anaya Mancilla",
+  "license": "ISC"
+}
