@@ -10,7 +10,7 @@ define(['N/ui/serverWidget'], function(ui) {
 
       form.addButton({
         id: 'custpage_btn_process',
-        label: 'Process file info',
+        label: 'Create invoice',
         functionName: dynamicFunctionName(context.newRecord),
       });
     }
@@ -21,15 +21,15 @@ define(['N/ui/serverWidget'], function(ui) {
       'processFile('
       + newRecord.id
       + ', '
-      + newRecord.custrecord_vend_file
+      + newRecord.getValue('custrecord_vend_file')
       + ')'
     );
   }
 
   function recordHasValidConditions(context) {
     return (context.type === context.UserEventType.VIEW
-      && context.newRecord.custrecord_vend_file
-      && !context.newRecord.custrecord_vend_id_netsuite_invoice);
+      && Boolean(context.newRecord.getValue('custrecord_vend_file'))
+      && !Boolean(context.newRecord.getValue('custrecord_vend_id_netsuite_invoice')));
   }
 
   return {

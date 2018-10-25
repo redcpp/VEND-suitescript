@@ -23,10 +23,15 @@ define(['N/record', 'N/search', 'N/file'], function(record, search, file) {
   function createInvoice(vendRecordId, vendRecordFileId) {
     var vendRecord = retrieveRecord(vendRecordId);
     var fileContents = retrieveFileContents(vendRecordFileId);
-    var info = obtainInfo();
+    var info = obtainInfo(fileContents);
+    var items = obtainProducts(fileContents.payload.register_sale_products);
+    log.audit({
+      title: 'items',
+      details: items,
+    });
   }
 
-  function retrieveRecord() {
+  function retrieveRecord(vendRecordId) {
     return search.lookupFields({
       type: 'customrecord_vend_custom_record',
       id: vendRecordId,
@@ -39,19 +44,67 @@ define(['N/record', 'N/search', 'N/file'], function(record, search, file) {
   }
 
   function retrieveFileContents(fileId) {
-    var fileObj = file.load({
-      id: fileId,
-    });
+    var fileObj = file.load({id: fileId});
     return JSON.parse(fileObj.getContents());
   }
 
-  function obtainInfo() {
+  function obtainInfo(sale) {
     return {
-      items: null,
       customer: null,
       taxCode: null,
       location: null,
       subsidiary: null,
+    };
+  }
+
+  function obtainProducts(products) {
+    var skuList = products.map(function (product) {
+      return product.sku
+    });
+    return searchProducts(skuList);
+  }
+
+  function searchProducts(skuList) {
+    log.audit({
+      title: 'Sku list',
+      details: skuList,
+    });
+    var searchOperation = search.create({
+      type: search.Type.INVENTORY_ITEM,
+      filters: [
+        ['isinactive', search.Operator.IS, 'F'],
+        'and',
+        ['externalid', search.Operator.ANYOF, skuList],
+      ],
+      columns: [{name: 'itemid'}],
+    });
+    var searchData = searchOperation.run();
+
+    var set = {};
+    var products = [];
+    var CHUNK_SIZE = 1000;
+    i = 0;
+    do {
+      var chunk = searchData.getRange(i, i + CHUNK_SIZE);
+      if (chunk && chunk.length) {
+        for (var i = 0; i < chunk.length; ++i) {
+          var product = extractProduct(chunk[i]);
+          if (!set[product.id]) {
+            set[product.id] = true;
+            products.push(product);
+          }
+        }
+      }
+      i += CHUNK_SIZE;
+    } while (i < searchData.length);
+
+    return products;
+  }
+
+  function extractProduct(product) {
+    return {
+      id: product.id,
+      name: product.getValue({name:'itemid'}),
     };
   }
 
