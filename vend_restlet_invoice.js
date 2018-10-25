@@ -6,16 +6,16 @@ define(['N/record', 'N/error'], function(record, error) {
   function processSale(context) {
     try {
       var saleRecord = createRecord();
-      setInfoOfRecord({content: context}, saleRecord);
+      setInfoOfRecord(context, saleRecord);
       var saleId = saveRecord(saleRecord);
 
       log.audit({
-        title: 'Invoice upload - success',
-        details: 'Invoice id: ' + saleId,
+        title: 'Custom record upload - success',
+        details: 'Custom record id: ' + saleId,
       });
     } catch (error) {
       log.audit({
-        title: 'Invoice upload - fail',
+        title: 'Custom record upload - fail',
         details: error,
       });
     }
@@ -63,11 +63,7 @@ define(['N/record', 'N/error'], function(record, error) {
 
   function extractGeneralInfo(ctx) {
     return {
-      subsidiary: 2,
-      location: 4,
-      custbody_efx_pos_origen: true,
-      memo: 'go_invoice_test',
-      approvalstatus: 1,
+      custrecord_vend_json: JSON.stringify(ctx),
     };
   }
 
