@@ -6,11 +6,24 @@ define(['N/url', 'N/record'], function (url, r) {
   */
   var exports = {};
 
-  function processFile(id) {
-    log.audit({
-      title: 'Click',
-      details: id,
-    });
+  function processFile(vendRecordId, vendRecordFileId) {
+    try {
+      var suitletUrl = url.resolveScript({
+        scriptId: 'customscript_vend_suitelet',
+        deploymentId: 'customdeploy_vend_suitelet',
+      });
+
+      suitletUrl += '&custparam_vendrecordid=' + vendRecordId;
+      suitletUrl += '&custparam_vendrecordfileid=' + vendRecordFileId;
+      suitletUrl += '&custparam_mode=createinvoice';
+
+      fetch(suitletUrl);
+    } catch (error) {
+      log.audit({
+        title: 'Clientscript error',
+        details: error,
+      });
+    }
   }
 
   exports.processFile = processFile;
