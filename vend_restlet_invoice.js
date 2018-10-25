@@ -2,11 +2,12 @@
  *@NApiVersion 2.x
  *@NScriptType Restlet
  */
-define(['N/record', 'N/error'], function(record, error) {
+define(['N/record', 'N/error', 'N/file'], function(record, error, file) {
   function processSale(context) {
     try {
       var saleRecord = createRecord();
-      setInfoOfRecord(context, saleRecord);
+      var fileId = createFile(context, file);
+      setInfoOfRecord(context, fileId, saleRecord);
       var saleId = saveRecord(saleRecord);
 
       log.audit({
@@ -27,8 +28,18 @@ define(['N/record', 'N/error'], function(record, error) {
     });
   }
 
-  function setInfoOfRecord(ctx, record) {
-    var info = extractGeneralInfo(ctx);
+  function createFile(context, file) {
+    var newFile = file.create({
+      name: extractName(context) + '.json',
+      fileType: file.Type.JSON,
+      contents: JSON.stringify(context),
+    });
+    newFile.folder = 827;
+    return newFile.save();
+  }
+
+  function setInfoOfRecord(context, fileId, record) {
+    var info = extractGeneralInfo(context, fileId);
 
     for (var field in info) {
       record.setValue({
@@ -61,9 +72,11 @@ define(['N/record', 'N/error'], function(record, error) {
     });
   }
 
-  function extractGeneralInfo(ctx) {
+  function extractGeneralInfo(context, fileId) {
     return {
-      custrecord_vend_json: JSON.stringify(ctx),
+      name: extractName(context),
+      custrecord_vend_json: JSON.stringify(context),
+      custrecord_vend_file: fileId,
     };
   }
 
@@ -73,6 +86,10 @@ define(['N/record', 'N/error'], function(record, error) {
       quantity: ctxProduct.quantity,
       tax_code: 5,
     }
+  }
+
+  function extractName(context) {
+    return context.payload.invoice_number
   }
 
   return {
