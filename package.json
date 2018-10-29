@@ -3,9 +3,18 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "lint": "eslint .",
+    "lint": "eslint -c dist/.eslint dist/",
+    "build": "node ./build.js; babel src -d dist",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Diego Said Anaya Mancilla",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "babel-cli": "^6.26.0",
+    "babel-preset-env": "^1.7.0",
+    "fs-extra": "^7.0.0"
+  },
+  "dependencies": {
+    "@babel/polyfill": "^7.0.0"
+  }
 }

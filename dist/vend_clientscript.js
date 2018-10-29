@@ -1,16 +1,18 @@
+'use strict';
+
 define(['N/url', 'N/record'], function (url, r) {
   /**
-  * Client Script to add a Button to Vend Custom Record
-  *
-  * @NApiVersion 2.x
-  */
+   * Client Script to add a Button to Vend Custom Record
+   *
+   * @NApiVersion 2.x
+   */
   var exports = {};
 
-  function processFile(vendRecordId, vendRecordFileId) {
+  var processFile = function processFile(vendRecordId, vendRecordFileId) {
     try {
       var suitletUrl = url.resolveScript({
         scriptId: 'customscript_vend_suitelet',
-        deploymentId: 'customdeploy_vend_suitelet',
+        deploymentId: 'customdeploy_vend_suitelet'
       });
 
       suitletUrl += '&custparam_vendrecordid=' + vendRecordId;
@@ -21,10 +23,10 @@ define(['N/url', 'N/record'], function (url, r) {
     } catch (error) {
       log.audit({
         title: 'Clientscript error',
-        details: error,
+        details: error
       });
     }
-  }
+  };
 
   exports.processFile = processFile;
   return exports;
