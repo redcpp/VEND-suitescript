@@ -2,6 +2,41 @@
 
 function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
 
+if (typeof Object.assign != 'function') {
+  // Must be writable: true, enumerable: false, configurable: true
+  Object.defineProperty(Object, 'assign', {
+    value: function assign(target, constArgs) {
+      // .length of function is 2
+      'use strict';
+
+      if (target == null) {
+        // TypeError if undefined or null
+        throw new TypeError('Cannot convert undefined or null to object');
+      }
+
+      var to = Object(target);
+
+      for (var index = 1; index < arguments.length; index++) {
+        // eslint-disable-line
+        var nextSource = arguments[index]; // eslint-disable-line
+
+        if (nextSource != null) {
+          // Skip over if undefined or null
+          for (var nextKey in nextSource) {
+            // Avoid bugs when hasOwnProperty is shadowed
+            if (Object.prototype.hasOwnProperty.call(nextSource, nextKey)) {
+              to[nextKey] = nextSource[nextKey];
+            }
+          }
+        }
+      }
+      return to;
+    },
+    writable: true,
+    configurable: true
+  });
+}
+
 /**
  * @NApiVersion 2.x
  * @NScriptType Suitelet
@@ -47,6 +82,27 @@ define(['N/record', 'N/search', 'N/file'], function (record, search, file) {
     });
     log.audit({ title: 'info', details: info });
     log.audit({ title: 'items', details: items });
+
+    try {
+      var invoice = createInvoiceRecord(35);
+      setInfo(invoice, {});
+      for (var i = 0; i < items.length; i++) {
+        addItem(invoice, {
+          item: items[i].internal_id,
+          quantity: items[i].quantity
+        });
+      }
+      var invoiceId = save(invoice);
+      log.audit({
+        title: 'Invoice - success',
+        details: 'Invoice id: ' + invoiceId
+      });
+    } catch (error) {
+      log.audit({
+        title: 'Invoice - fail',
+        details: error
+      });
+    }
   };
 
   var retrieveRecord = function retrieveRecord(vendRecordId) {
@@ -74,6 +130,8 @@ define(['N/record', 'N/search', 'N/file'], function (record, search, file) {
     log.audit({ title: 'localInfoOfSku', details: localInfoOfSku });
     var productsWithAllInfo = products.map(function (product) {
       return Object.assign({}, product, localInfoOfSku[product.sku]);
+    }).filter(function (product) {
+      return product.internal_id;
     });
     return productsWithAllInfo;
   };
@@ -116,9 +174,8 @@ define(['N/record', 'N/search', 'N/file'], function (record, search, file) {
   };
 
   var obtainProduct = function obtainProduct(product) {
-    // eslint-disable-line
     return {
-      internal_id: product.id,
+      internal_id: parseInt(product.id),
       internal_name: product.getValue({ name: 'itemid' }),
       sku: product.getValue({ name: 'externalid' })
     };
@@ -131,42 +188,75 @@ define(['N/record', 'N/search', 'N/file'], function (record, search, file) {
     });
   };
 
+  var defaultInfo = {
+    subsidiary: 2,
+    location: 4,
+    custbody_efx_pos_origen: true,
+    memo: 'go_invoice_test',
+    approvalstatus: 1
+  };
+
+  var defaultItem = {
+    item: 42,
+    quantity: 2,
+    tax_code: 5
+  };
+
+  var createInvoiceRecord = function createInvoiceRecord(customer) {
+    return record.create({
+      type: record.Type.INVOICE,
+      isDynamic: true,
+      defaultValues: {
+        entity: customer
+      }
+    });
+  };
+
+  var _log = function _log(text) {
+    log.audit({
+      title: 'Creator',
+      details: text
+    });
+  };
+
+  var setInfo = function setInfo(invoice, newInfo) {
+    var info = Object.assign({}, defaultInfo, newInfo);
+    _log('setInfo: ' + JSON.stringify(info));
+    for (var field in info) {
+      if (info.hasOwnProperty(field)) {
+        invoice.setValue({
+          fieldId: field,
+          value: info[field],
+          ignoreFieldChange: true
+        });
+      }
+    }
+  };
+
+  var addItem = function addItem(invoice, newItem) {
+    var item = Object.assign({}, defaultItem, newItem);
+    _log('addItem: ' + JSON.stringify(item));
+    invoice.selectNewLine({ sublistId: 'item' });
+    for (var field in item) {
+      if (item.hasOwnProperty(field)) {
+        invoice.setCurrentSublistValue({
+          sublistId: 'item',
+          fieldId: field,
+          value: item[field]
+        });
+      }
+    }
+    invoice.commitLine({ sublistId: 'item' });
+  };
+
+  var save = function save(invoice) {
+    return invoice.save({
+      enableSourcing: true,
+      ignoreMandatoryFields: true
+    });
+  };
+
   return {
     onRequest: onRequest
   };
 });
-
-if (typeof Object.assign != 'function') {
-  // Must be writable: true, enumerable: false, configurable: true
-  Object.defineProperty(Object, 'assign', {
-    value: function assign(target, constArgs) {
-      // .length of function is 2
-      'use strict';
-
-      if (target == null) {
-        // TypeError if undefined or null
-        throw new TypeError('Cannot convert undefined or null to object');
-      }
-
-      var to = Object(target);
-
-      for (var index = 1; index < arguments.length; index++) {
-        // eslint-disable-line
-        var nextSource = arguments[index]; // eslint-disable-line
-
-        if (nextSource != null) {
-          // Skip over if undefined or null
-          for (var nextKey in nextSource) {
-            // Avoid bugs when hasOwnProperty is shadowed
-            if (Object.prototype.hasOwnProperty.call(nextSource, nextKey)) {
-              to[nextKey] = nextSource[nextKey];
-            }
-          }
-        }
-      }
-      return to;
-    },
-    writable: true,
-    configurable: true
-  });
-}

@@ -1,3 +1,36 @@
+if (typeof Object.assign != 'function') {
+  // Must be writable: true, enumerable: false, configurable: true
+  Object.defineProperty(Object, 'assign', {
+    value: function assign(target, constArgs) {
+      // .length of function is 2
+      'use strict';
+      if (target == null) {
+        // TypeError if undefined or null
+        throw new TypeError('Cannot convert undefined or null to object');
+      }
+
+      const to = Object(target);
+
+      for (let index = 1; index < arguments.length; index++) { // eslint-disable-line
+        const nextSource = arguments[index]; // eslint-disable-line
+
+        if (nextSource != null) {
+          // Skip over if undefined or null
+          for (const nextKey in nextSource) {
+            // Avoid bugs when hasOwnProperty is shadowed
+            if (Object.prototype.hasOwnProperty.call(nextSource, nextKey)) {
+              to[nextKey] = nextSource[nextKey];
+            }
+          }
+        }
+      }
+      return to;
+    },
+    writable: true,
+    configurable: true,
+  });
+}
+
 /**
  * @NApiVersion 2.x
  * @NScriptType Suitelet
@@ -43,6 +76,27 @@ define(['N/record', 'N/search', 'N/file'], (record, search, file) => {
     });
     log.audit({title: 'info', details: info});
     log.audit({title: 'items', details: items});
+
+    try {
+      const invoice = createInvoiceRecord(35);
+      setInfo(invoice, {});
+      for (let i = 0; i < items.length; i++) {
+        addItem(invoice, {
+          item: items[i].internal_id,
+          quantity: items[i].quantity,
+        });
+      }
+      const invoiceId = save(invoice);
+      log.audit({
+        title: 'Invoice - success',
+        details: 'Invoice id: ' + invoiceId,
+      });
+    } catch (error) {
+      log.audit({
+        title: 'Invoice - fail',
+        details: error,
+      });
+    }
   };
 
   const retrieveRecord = (vendRecordId) => {
@@ -72,9 +126,9 @@ define(['N/record', 'N/search', 'N/file'], (record, search, file) => {
     });
     const localInfoOfSku = searchProducts(skuList);
     log.audit({title: 'localInfoOfSku', details: localInfoOfSku});
-    const productsWithAllInfo = products.map(function(product) {
-      return Object.assign({}, product, localInfoOfSku[product.sku]);
-    });
+    const productsWithAllInfo = products.map((product) => (
+      Object.assign({}, product, localInfoOfSku[product.sku])
+    )).filter((product) => product.internal_id);
     return productsWithAllInfo;
   };
 
@@ -120,9 +174,8 @@ define(['N/record', 'N/search', 'N/file'], (record, search, file) => {
   };
 
   const obtainProduct = (product) => {
-    // eslint-disable-line
     return {
-      internal_id: product.id,
+      internal_id: parseInt(product.id),
       internal_name: product.getValue({name: 'itemid'}),
       sku: product.getValue({name: 'externalid'}),
     };
@@ -135,41 +188,75 @@ define(['N/record', 'N/search', 'N/file'], (record, search, file) => {
     });
   };
 
+  const defaultInfo = {
+    subsidiary: 2,
+    location: 4,
+    custbody_efx_pos_origen: true,
+    memo: 'go_invoice_test',
+    approvalstatus: 1,
+  };
+
+  const defaultItem = {
+    item: 42,
+    quantity: 2,
+    tax_code: 5,
+  };
+
+  const createInvoiceRecord = (customer) => {
+    return record.create({
+      type: record.Type.INVOICE,
+      isDynamic: true,
+      defaultValues: {
+        entity: customer,
+      },
+    });
+  };
+
+  const _log = function(text) {
+    log.audit({
+      title: 'Creator',
+      details: text,
+    });
+  };
+
+  const setInfo = function(invoice, newInfo) {
+    const info = Object.assign({}, defaultInfo, newInfo);
+    _log(`setInfo: ${JSON.stringify(info)}`);
+    for (const field in info) {
+      if (info.hasOwnProperty(field)) {
+        invoice.setValue({
+          fieldId: field,
+          value: info[field],
+          ignoreFieldChange: true,
+        });
+      }
+    }
+  };
+
+  const addItem = function(invoice, newItem) {
+    const item = Object.assign({}, defaultItem, newItem);
+    _log(`addItem: ${JSON.stringify(item)}`);
+    invoice.selectNewLine({sublistId: 'item'});
+    for (const field in item) {
+      if (item.hasOwnProperty(field)) {
+        invoice.setCurrentSublistValue({
+          sublistId: 'item',
+          fieldId: field,
+          value: item[field],
+        });
+      }
+    }
+    invoice.commitLine({sublistId: 'item'});
+  };
+
+  const save = function(invoice) {
+    return invoice.save({
+      enableSourcing: true,
+      ignoreMandatoryFields: true,
+    });
+  };
+
   return {
     onRequest: onRequest,
   };
 });
-
-if (typeof Object.assign != 'function') {
-  // Must be writable: true, enumerable: false, configurable: true
-  Object.defineProperty(Object, 'assign', {
-    value: function assign(target, constArgs) {
-      // .length of function is 2
-      'use strict';
-      if (target == null) {
-        // TypeError if undefined or null
-        throw new TypeError('Cannot convert undefined or null to object');
-      }
-
-      const to = Object(target);
-
-      for (let index = 1; index < arguments.length; index++) {
-        // eslint-disable-line
-        const nextSource = arguments[index]; // eslint-disable-line
-
-        if (nextSource != null) {
-          // Skip over if undefined or null
-          for (const nextKey in nextSource) {
-            // Avoid bugs when hasOwnProperty is shadowed
-            if (Object.prototype.hasOwnProperty.call(nextSource, nextKey)) {
-              to[nextKey] = nextSource[nextKey];
-            }
-          }
-        }
-      }
-      return to;
-    },
-    writable: true,
-    configurable: true,
-  });
-}
