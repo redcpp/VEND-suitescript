@@ -11,7 +11,8 @@ if (typeof Object.assign != 'function') {
 
       const to = Object(target);
 
-      for (let index = 1; index < arguments.length; index++) { // eslint-disable-line
+      for (let index = 1; index < arguments.length; index++) {
+        // eslint-disable-line
         const nextSource = arguments[index]; // eslint-disable-line
 
         if (nextSource != null) {
@@ -49,10 +50,7 @@ define(['N/record', 'N/search', 'N/file'], (record, search, file) => {
         logModeUndefined();
       }
     } catch (error) {
-      log.audit({
-        title: 'Request failed',
-        details: error,
-      });
+      logError(error);
     }
   };
 
@@ -63,7 +61,6 @@ define(['N/record', 'N/search', 'N/file'], (record, search, file) => {
   */
 
   const createInvoice = (vendRecordId, vendRecordFileId) => {
-    const vendRecord = retrieveRecord(vendRecordId); // eslint-disable-line
     const fileContents = retrieveFileContents(vendRecordFileId);
     const info = obtainInfo(fileContents);
     const items = obtainProducts(fileContents.payload.register_sale_products);
@@ -76,30 +73,29 @@ define(['N/record', 'N/search', 'N/file'], (record, search, file) => {
     });
     log.audit({title: 'info', details: info});
     log.audit({title: 'items', details: items});
-
-    try {
-      const invoice = createInvoiceRecord(35);
-      setInfo(invoice, {});
-      for (let i = 0; i < items.length; i++) {
-        addItem(invoice, {
-          item: items[i].internal_id,
-          quantity: items[i].quantity,
-        });
-      }
-      const invoiceId = save(invoice);
-      log.audit({
-        title: 'Invoice - success',
-        details: 'Invoice id: ' + invoiceId,
-      });
-    } catch (error) {
-      log.audit({
-        title: 'Invoice - fail',
-        details: error,
-      });
-    }
+    const invoiceId = createInvoiceRecord(items);
+    updateCustomVendRecord(vendRecordId, invoiceId);
   };
 
-  const retrieveRecord = (vendRecordId) => {
+  const updateCustomVendRecord = (vendRecordId, invoiceId) => {
+    const id = record.submitFields({
+      type: 'customrecord_vend_custom_record',
+      id: vendRecordId,
+      values: {
+        custrecord_vend_id_netsuite_invoice: invoiceId,
+      },
+      options: {
+        enableSourcing: true,
+        ignoreMandatoryFields: false,
+      },
+    });
+    log.audit({
+      title: 'Submit fields',
+      details: 'vendRecordId: ' + id,
+    });
+  };
+
+  const retrieveRecord = (vendRecordId) => { // eslint-disable-line
     return search.lookupFields({
       type: 'customrecord_vend_custom_record',
       id: vendRecordId,
@@ -125,10 +121,9 @@ define(['N/record', 'N/search', 'N/file'], (record, search, file) => {
       return product.sku;
     });
     const localInfoOfSku = searchProducts(skuList);
-    log.audit({title: 'localInfoOfSku', details: localInfoOfSku});
-    const productsWithAllInfo = products.map((product) => (
-      Object.assign({}, product, localInfoOfSku[product.sku])
-    )).filter((product) => product.internal_id);
+    const productsWithAllInfo = products
+      .map((product) => Object.assign({}, product, localInfoOfSku[product.sku]))
+      .filter((product) => product.internal_id);
     return productsWithAllInfo;
   };
 
@@ -181,6 +176,30 @@ define(['N/record', 'N/search', 'N/file'], (record, search, file) => {
     };
   };
 
+  const createInvoiceRecord = (items) => {
+    try {
+      const creator = invoiceFactory({record, log, customer: 35});
+      creator.setInfo({});
+      items.forEach((item) => {
+        creator.addItem({
+          item: item.internal_id,
+          quantity: item.quantity,
+        });
+      });
+      const invoiceId = creator.save();
+      logInvoiceSuccess(invoiceId);
+      return invoiceId;
+    } catch (error) {
+      logInvoiceError(error);
+    }
+  };
+
+  /*
+  **********************************************************************************
+  * Loggers
+  **********************************************************************************
+  */
+
   const logModeUndefined = () => {
     log.audit({
       title: 'Request failed',
@@ -188,6 +207,45 @@ define(['N/record', 'N/search', 'N/file'], (record, search, file) => {
     });
   };
 
+  const logError = (error) => {
+    log.audit({
+      title: 'Request failed',
+      details: error,
+    });
+  };
+
+  const logInvoiceSuccess = (invoiceId) => {
+    log.audit({
+      title: 'Invoice - success',
+      details: 'Invoice id: ' + invoiceId,
+    });
+  };
+
+  const logInvoiceError = (error) => {
+    log.audit({
+      title: 'Invoice - fail',
+      details: error,
+    });
+  };
+
+  /*
+  **********************************************************************************
+  * Main Return
+  **********************************************************************************
+  */
+
+  return {
+    onRequest: onRequest,
+  };
+});
+
+/*
+**********************************************************************************
+* Utilities
+**********************************************************************************
+*/
+
+const invoiceFactory = ({record, log, customer}) => {
   const defaultInfo = {
     subsidiary: 2,
     location: 4,
@@ -202,15 +260,13 @@ define(['N/record', 'N/search', 'N/file'], (record, search, file) => {
     tax_code: 5,
   };
 
-  const createInvoiceRecord = (customer) => {
-    return record.create({
-      type: record.Type.INVOICE,
-      isDynamic: true,
-      defaultValues: {
-        entity: customer,
-      },
-    });
-  };
+  const invoice = record.create({
+    type: record.Type.INVOICE,
+    isDynamic: true,
+    defaultValues: {
+      entity: customer,
+    },
+  });
 
   const _log = function(text) {
     log.audit({
@@ -219,44 +275,42 @@ define(['N/record', 'N/search', 'N/file'], (record, search, file) => {
     });
   };
 
-  const setInfo = function(invoice, newInfo) {
-    const info = Object.assign({}, defaultInfo, newInfo);
-    _log(`setInfo: ${JSON.stringify(info)}`);
-    for (const field in info) {
-      if (info.hasOwnProperty(field)) {
-        invoice.setValue({
-          fieldId: field,
-          value: info[field],
-          ignoreFieldChange: true,
-        });
-      }
-    }
-  };
-
-  const addItem = function(invoice, newItem) {
-    const item = Object.assign({}, defaultItem, newItem);
-    _log(`addItem: ${JSON.stringify(item)}`);
-    invoice.selectNewLine({sublistId: 'item'});
-    for (const field in item) {
-      if (item.hasOwnProperty(field)) {
-        invoice.setCurrentSublistValue({
-          sublistId: 'item',
-          fieldId: field,
-          value: item[field],
-        });
-      }
-    }
-    invoice.commitLine({sublistId: 'item'});
-  };
-
-  const save = function(invoice) {
-    return invoice.save({
-      enableSourcing: true,
-      ignoreMandatoryFields: true,
-    });
-  };
-
   return {
-    onRequest: onRequest,
+    setInfo(newInfo) {
+      const info = Object.assign({}, defaultInfo, newInfo);
+      _log(`setInfo: ${JSON.stringify(info)}`);
+      for (const field in info) {
+        if (info.hasOwnProperty(field)) {
+          invoice.setValue({
+            fieldId: field,
+            value: info[field],
+            ignoreFieldChange: true,
+          });
+        }
+      }
+    },
+
+    addItem(newItem) {
+      const item = Object.assign({}, defaultItem, newItem);
+      _log(`addItem: ${JSON.stringify(item)}`);
+      invoice.selectNewLine({sublistId: 'item'});
+      for (const field in item) {
+        if (item.hasOwnProperty(field)) {
+          invoice.setCurrentSublistValue({
+            sublistId: 'item',
+            fieldId: field,
+            value: item[field],
+          });
+        }
+      }
+      invoice.commitLine({sublistId: 'item'});
+    },
+
+    save() {
+      return invoice.save({
+        enableSourcing: true,
+        ignoreMandatoryFields: true,
+      });
+    },
   };
-});
+};

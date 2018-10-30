@@ -55,10 +55,7 @@ define(['N/record', 'N/search', 'N/file'], function (record, search, file) {
         logModeUndefined();
       }
     } catch (error) {
-      log.audit({
-        title: 'Request failed',
-        details: error
-      });
+      logError(error);
     }
   };
 
@@ -69,7 +66,6 @@ define(['N/record', 'N/search', 'N/file'], function (record, search, file) {
   */
 
   var createInvoice = function createInvoice(vendRecordId, vendRecordFileId) {
-    var vendRecord = retrieveRecord(vendRecordId); // eslint-disable-line
     var fileContents = retrieveFileContents(vendRecordFileId);
     var info = obtainInfo(fileContents);
     var items = obtainProducts(fileContents.payload.register_sale_products);
@@ -82,30 +78,30 @@ define(['N/record', 'N/search', 'N/file'], function (record, search, file) {
     });
     log.audit({ title: 'info', details: info });
     log.audit({ title: 'items', details: items });
+    var invoiceId = createInvoiceRecord(items);
+    updateCustomVendRecord(vendRecordId, invoiceId);
+  };
 
-    try {
-      var invoice = createInvoiceRecord(35);
-      setInfo(invoice, {});
-      for (var i = 0; i < items.length; i++) {
-        addItem(invoice, {
-          item: items[i].internal_id,
-          quantity: items[i].quantity
-        });
+  var updateCustomVendRecord = function updateCustomVendRecord(vendRecordId, invoiceId) {
+    var id = record.submitFields({
+      type: 'customrecord_vend_custom_record',
+      id: vendRecordId,
+      values: {
+        custrecord_vend_id_netsuite_invoice: invoiceId
+      },
+      options: {
+        enableSourcing: true,
+        ignoreMandatoryFields: false
       }
-      var invoiceId = save(invoice);
-      log.audit({
-        title: 'Invoice - success',
-        details: 'Invoice id: ' + invoiceId
-      });
-    } catch (error) {
-      log.audit({
-        title: 'Invoice - fail',
-        details: error
-      });
-    }
+    });
+    log.audit({
+      title: 'Submit fields',
+      details: 'vendRecordId: ' + id
+    });
   };
 
   var retrieveRecord = function retrieveRecord(vendRecordId) {
+    // eslint-disable-line
     return search.lookupFields({
       type: 'customrecord_vend_custom_record',
       id: vendRecordId,
@@ -127,7 +123,6 @@ define(['N/record', 'N/search', 'N/file'], function (record, search, file) {
       return product.sku;
     });
     var localInfoOfSku = searchProducts(skuList);
-    log.audit({ title: 'localInfoOfSku', details: localInfoOfSku });
     var productsWithAllInfo = products.map(function (product) {
       return Object.assign({}, product, localInfoOfSku[product.sku]);
     }).filter(function (product) {
@@ -181,12 +176,79 @@ define(['N/record', 'N/search', 'N/file'], function (record, search, file) {
     };
   };
 
+  var createInvoiceRecord = function createInvoiceRecord(items) {
+    try {
+      var creator = invoiceFactory({ record: record, log: log, customer: 35 });
+      creator.setInfo({});
+      items.forEach(function (item) {
+        creator.addItem({
+          item: item.internal_id,
+          quantity: item.quantity
+        });
+      });
+      var invoiceId = creator.save();
+      logInvoiceSuccess(invoiceId);
+      return invoiceId;
+    } catch (error) {
+      logInvoiceError(error);
+    }
+  };
+
+  /*
+  **********************************************************************************
+  * Loggers
+  **********************************************************************************
+  */
+
   var logModeUndefined = function logModeUndefined() {
     log.audit({
       title: 'Request failed',
       details: 'Mode not defined'
     });
   };
+
+  var logError = function logError(error) {
+    log.audit({
+      title: 'Request failed',
+      details: error
+    });
+  };
+
+  var logInvoiceSuccess = function logInvoiceSuccess(invoiceId) {
+    log.audit({
+      title: 'Invoice - success',
+      details: 'Invoice id: ' + invoiceId
+    });
+  };
+
+  var logInvoiceError = function logInvoiceError(error) {
+    log.audit({
+      title: 'Invoice - fail',
+      details: error
+    });
+  };
+
+  /*
+  **********************************************************************************
+  * Main Return
+  **********************************************************************************
+  */
+
+  return {
+    onRequest: onRequest
+  };
+});
+
+/*
+**********************************************************************************
+* Utilities
+**********************************************************************************
+*/
+
+var invoiceFactory = function invoiceFactory(_ref2) {
+  var record = _ref2.record,
+      log = _ref2.log,
+      customer = _ref2.customer;
 
   var defaultInfo = {
     subsidiary: 2,
@@ -202,15 +264,13 @@ define(['N/record', 'N/search', 'N/file'], function (record, search, file) {
     tax_code: 5
   };
 
-  var createInvoiceRecord = function createInvoiceRecord(customer) {
-    return record.create({
-      type: record.Type.INVOICE,
-      isDynamic: true,
-      defaultValues: {
-        entity: customer
-      }
-    });
-  };
+  var invoice = record.create({
+    type: record.Type.INVOICE,
+    isDynamic: true,
+    defaultValues: {
+      entity: customer
+    }
+  });
 
   var _log = function _log(text) {
     log.audit({
@@ -219,44 +279,40 @@ define(['N/record', 'N/search', 'N/file'], function (record, search, file) {
     });
   };
 
-  var setInfo = function setInfo(invoice, newInfo) {
-    var info = Object.assign({}, defaultInfo, newInfo);
-    _log('setInfo: ' + JSON.stringify(info));
-    for (var field in info) {
-      if (info.hasOwnProperty(field)) {
-        invoice.setValue({
-          fieldId: field,
-          value: info[field],
-          ignoreFieldChange: true
-        });
-      }
-    }
-  };
-
-  var addItem = function addItem(invoice, newItem) {
-    var item = Object.assign({}, defaultItem, newItem);
-    _log('addItem: ' + JSON.stringify(item));
-    invoice.selectNewLine({ sublistId: 'item' });
-    for (var field in item) {
-      if (item.hasOwnProperty(field)) {
-        invoice.setCurrentSublistValue({
-          sublistId: 'item',
-          fieldId: field,
-          value: item[field]
-        });
-      }
-    }
-    invoice.commitLine({ sublistId: 'item' });
-  };
-
-  var save = function save(invoice) {
-    return invoice.save({
-      enableSourcing: true,
-      ignoreMandatoryFields: true
-    });
-  };
-
   return {
-    onRequest: onRequest
+    setInfo: function setInfo(newInfo) {
+      var info = Object.assign({}, defaultInfo, newInfo);
+      _log('setInfo: ' + JSON.stringify(info));
+      for (var field in info) {
+        if (info.hasOwnProperty(field)) {
+          invoice.setValue({
+            fieldId: field,
+            value: info[field],
+            ignoreFieldChange: true
+          });
+        }
+      }
+    },
+    addItem: function addItem(newItem) {
+      var item = Object.assign({}, defaultItem, newItem);
+      _log('addItem: ' + JSON.stringify(item));
+      invoice.selectNewLine({ sublistId: 'item' });
+      for (var field in item) {
+        if (item.hasOwnProperty(field)) {
+          invoice.setCurrentSublistValue({
+            sublistId: 'item',
+            fieldId: field,
+            value: item[field]
+          });
+        }
+      }
+      invoice.commitLine({ sublistId: 'item' });
+    },
+    save: function save() {
+      return invoice.save({
+        enableSourcing: true,
+        ignoreMandatoryFields: true
+      });
+    }
   };
-});
+};

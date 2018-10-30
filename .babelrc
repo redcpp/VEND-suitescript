@@ -1,10 +1,13 @@
 {
-  "presets": [
-    ["env", {
-      "targets": {
-        "browsers": ["ie < 8"]
-      },
-      "debug": true
-    }]
-  ]
+    "presets": [
+        "flow",
+        [
+            "env", {
+                "targets": {
+                    "browsers": ["ie < 8"]
+                },
+                "debug": true
+            }
+        ]
+    ]
 }
